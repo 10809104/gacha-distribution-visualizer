@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抽卡機率與分布模擬器 (含大保底、多重期望、蒙地卡羅)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js">
+    </script>
+    <style>
+        :root {
+            --bg: #f0f4f8;
+            --card: #ffffff;
+            --text: #2d3748;
+            --text-secondary: #4a5568;
+            --border: #e2e8f0;
+            --accent: #4f6ef7;
+            --accent-hover: #3b54d4;
+            --green: #10b981;
+            --orange: #f59e0b;
+            --red: #ef4444;
+            --tag-bg: #eef2ff;
+            --tag-text: #4f6ef7;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+            --radius: 14px;
+            --radius-sm: 8px;
+            --transition: 0.2s ease;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #e8edf5 0%, #f0f4f8 30%, #f8fafc 60%, #eef1f7 100%);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 16px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 1.7rem;
+            font-weight: 700;
+            color: #1a202c;
+            letter-spacing: -0.02em;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .badge-row {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.76rem;
+            font-weight: 600;
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            letter-spacing: 0.01em;
+        }
+        .badge.new {
+            background: #fef3c7;
+            color: #b45309;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 18px;
+            align-items: start;
+        }
+        @media (max-width: 1050px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+        .panel {
+            background: var(--card);
+            padding: 20px 18px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: var(--transition);
+        }
+        .panel h3 {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .dot.blue {
+            background: var(--accent);
+        }
+        .dot.green {
+            background: var(--green);
+        }
+        .dot.orange {
+            background: var(--orange);
+        }
+        .form-section {
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed #e8ecf1;
+        }
+        .form-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .form-section-label {
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #8899aa;
+            margin-bottom: 8px;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 3px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+        label .unit {
+            font-weight: 400;
+            color: #8899aa;
+            font-size: 0.73rem;
+        }
+        input,
+        select {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1.5px solid #dce3eb;
+            border-radius: var(--radius-sm);
+            font-size: 0.88rem;
+            background: #fafbfc;
+            transition: var(--transition);
+            color: #1a202c;
+            font-family: inherit;
+        }
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.1);
+            background: #fff;
+        }
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 6px;
+            accent-color: var(--accent);
+            transform: scale(1.1);
+        }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.83rem;
+            gap: 4px;
+        }
+        .btn {
+            padding: 10px 14px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            font-family: inherit;
+            letter-spacing: 0.01em;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            justify-content: center;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            width: 100%;
+            font-size: 0.93rem;
+            padding: 11px;
+            border-radius: 10px;
+        }
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-1px);
+        }
+        .btn-outline {
+            background: #fff;
+            color: var(--accent);
+            border: 1.5px solid var(--accent);
+            flex: 1;
+            font-size: 0.8rem;
+            padding: 7px 8px;
+            border-radius: 8px;
+        }
+        .btn-outline:hover {
+            background: #f8faff;
+            border-color: var(--accent-hover);
+        }
+        .btn-sm {
+            padding: 6px 9px;
+            font-size: 0.73rem;
+            border-radius: 6px;
+        }
+        .btn-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+        .btn-row .btn {
+            flex: 1;
+            min-width: 60px;
+        }
+        .results-compact {
+            background: #f8fafc;
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            margin-top: 12px;
+            border: 1px solid #e8ecf1;
+        }
+        .result-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        .result-item {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+        }
+        .result-value {
+            font-weight: 700;
+            color: #1a202c;
+            display: block;
+            font-size: 0.95rem;
+        }
+        .result-value.highlight {
+            color: var(--accent);
+            font-size: 1.05rem;
+        }
+        .result-value.green {
+            color: #059669;
+        }
+        .sim-progress {
+            display: none;
+            margin-top: 8px;
+            background: #e8ecf1;
+            border-radius: 8px;
+            height: 5px;
+            overflow: hidden;
+        }
+        .sim-progress.active {
+            display: block;
+        }
+        .sim-progress-bar {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 8px;
+            transition: width 0.15s ease;
+            width: 0%;
+        }
+        .sim-status {
+            font-size: 0.73rem;
+            color: #8899aa;
+            margin-top: 3px;
+            text-align: center;
+            display: none;
+        }
+        .sim-status.active {
+            display: block;
+        }
+        .chart-wrapper {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 16px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            margin-bottom: 14px;
+        }
+        .chart-wrapper h4 {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 6px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        .chart-container.tall {
+            height: 320px;
+        }
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #1a202c;
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 0.83rem;
+            font-weight: 600;
+            z-index: 999;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .comparison-table {
+            width: 100%;
+            font-size: 0.76rem;
+            border-collapse: collapse;
+            margin-top: 8px;
+        }
+        .comparison-table th,
+        .comparison-table td {
+            padding: 5px 8px;
+            border: 1px solid #e8ecf1;
+            text-align: center;
+        }
+        .comparison-table th {
+            background: #f8fafc;
+            font-weight: 700;
+            color: #4a5568;
+        }
+        .match {
+            color: #059669;
+        }
+        .diff {
+            color: #ef4444;
+        }
+        .align-hint {
+            font-size: 0.7rem;
+            color: #8899aa;
+            margin-top: 2px;
+            font-style: italic;
+        }
+        @media (max-width: 600px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            .result-grid {
+                grid-template-columns: 1fr;
+            }
+            .chart-container {
+                height: 240px;
+            }
+            .chart-container.tall {
+                height: 260px;
+            }
+            .header h1 {
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>🎰 抽卡機率與分布模擬器</h1>
+            <div class="badge-row">
+                <span class="badge">📐 理論計算</span>
+                <span class="badge new">🎲 蒙地卡羅</span>
+                <span class="badge">🛡️ 大保底</span>
+                <span class="badge">📊 導出</span>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <!-- 左側參數面板 -->
+            <div class="panel">
+                <h3><span class="dot blue"></span>參數設定</h3>
+                <div class="form-section">
+                    <div class="form-section-label">🔧 保底機制</div>
+                    <div class="form-group">
+                        <label for="mode">保底模式</label>
+                        <select id="mode" onchange="toggleInputs()">
+                            <option value="soft">軟保底 (Soft Cap)</option>
+                            <option value="hard">硬保底 (Fixed Cap)</option>
+                            <option value="none">無保底</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="baseP">基礎單抽SSR機率 <span class="unit">(%)</span></label>
+                        <input type="number" id="baseP" value="0.6" step="0.01" min="0.001" max="100">
+                    </div>
+                    <div class="form-row" id="softGroup">
+                        <div><label for="softX">開始提升抽數 (x)</label><input type="number" id="softX" value="74" min="1"></div>
+                        <div><label for="softY">每抽提升機率 <span class="unit">(%)</span></label><input type="number" id="softY" value="6.0" step="0.1" min="0"></div>
+                    </div>
+                    <div class="form-group" id="hardGroup">
+                        <label for="maxN">強制保底抽數 (N)</label><input type="number" id="maxN" value="90" min="2">
+                    </div>
+                    <div class="form-group" id="noneGroup" style="display: none;">
+                        <label for="customLimit">顯示抽數上限</label><input type="number" id="customLimit" value="200" min="1">
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-label">🛡️ 大保底 (歪卡)</div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="guaranteeEnabled" onchange="toggleGuaranteeInputs()">
+                            <span>啟用大保底機制</span>
+                        </label>
+                    </div>
+                    <div id="guaranteeGroup" style="display:none;">
+                        <div class="form-group">
+                            <label for="offP">歪卡機率 <span class="unit">(%)</span></label>
+                            <input type="number" id="offP" value="50.0" step="0.1" min="0" max="100">
+                        </div>
+                        <p style="font-size:0.7rem;color:#8899aa;margin-top:-4px;">💡 歪卡後下一次SSR必定為目標</p>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-label">🎯 目標設定</div>
+                    <div class="form-row">
+                        <div><label for="targetK">預期獲得目標數量 (k)</label><input type="number" id="targetK" value="1" min="1" max="20"></div>
+                        <div><label for="queryN">查詢特定抽數 (n)</label><input type="number" id="queryN" value="50" min="1"></div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-label">🎲 蒙地卡羅模擬</div>
+                    <div class="form-row">
+                        <div><label for="simCount">模擬次數</label><input type="number" id="simCount" value="5000" min="100" max="100000" step="500"></div>
+                        <div style="display:flex;align-items:flex-end;">
+                            <button class="btn btn-outline" onclick="runMonteCarloOnly()" style="width:100%;">🔄 僅跑模擬</button>
+                        </div>
+                    </div>
+                    <div class="sim-progress" id="simProgress"><div class="sim-progress-bar" id="simProgressBar"></div></div>
+                    <div class="sim-status" id="simStatus"></div>
+                </div>
+
+                <button class="btn btn-primary" onclick="calculateAll()">🚀 全部計算 (理論+模擬)</button>
+                <div class="btn-row">
+                    <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 匯出CSV</button>
+                    <button class="btn btn-outline btn-sm" onclick="copyResults()">📋 複製摘要</button>
+                    <button class="btn btn-outline btn-sm" onclick="shareURL()">🔗 分享連結</button>
+                </div>
+
+                <div class="results-compact" id="resultsCompact">
+                    <h4 style="font-size:0.82rem;font-weight:700;margin-bottom:6px;color:#1a202c;">📋 計算指標摘要</h4>
+                    <div class="result-grid">
+                        <div class="result-item">理論期望 (單SSR)<span class="result-value highlight" id="resE_ssr">-</span></div>
+                        <div class="result-item">含大保底期望 (1目標)<span class="result-value highlight" id="resE_target">-</span></div>
+                        <div class="result-item">獲 <span id="kLabel1">k</span> 目標期望抽數<span class="result-value green" id="resE_k">-</span></div>
+                        <div class="result-item"><span id="queryNLabel">n</span>抽內至少1目標<span class="result-value" id="resAtLeastOne">-</span></div>
+                        <div class="result-item">蒙地卡羅平均<span class="result-value green" id="resSimMean">-</span></div>
+                        <div class="result-item">模擬 vs 理論誤差<span class="result-value" id="resDiff">-</span></div>
+                    </div>
+                    <div id="multiExpectTable" style="margin-top:8px;font-size:0.73rem;"></div>
+                </div>
+            </div>
+
+            <!-- 右側圖表 -->
+            <div>
+                <!-- 理論分布 + 模擬疊加 (當k=1時同尺度) -->
+                <div class="chart-wrapper" id="theoryChartWrapper">
+                    <h4>📊 單次SSR理論分布 (PMF & CDF)
+                        <span id="alignBadge" style="display:none;font-size:0.7rem;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:10px;margin-left:6px;">🎯 模擬直方圖已對齊尺度</span>
+                    </h4>
+                    <p class="align-hint" id="alignHint" style="display:none;">✅ 下方蒙地卡羅直方圖的X軸已與此理論圖對齊 (均為第1~N抽)，方便直接對比。</p>
+                    <div class="chart-container" id="theoryChartContainer">
+                        <canvas id="pmfChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 蒙地卡羅模擬直方圖 -->
+                <div class="chart-wrapper" id="simChartWrapper">
+                    <h4>🎲 蒙地卡羅模擬：獲得 <span id="kLabel2">k</span> 個目標所需總抽數分布</h4>
+                    <p class="align-hint" id="simAlignHint" style="display:none;">🔗 X軸已與上方理論圖對齊 (第1~N抽)，每個長條代表1抽的頻率。</p>
+                    <div class="chart-container tall" id="simChartContainer">
+                        <canvas id="simHistChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 理論 vs 模擬 CDF 對比 -->
+                <div class="chart-wrapper" id="comparisonChartWrapper">
+                    <h4>📈 理論 vs 模擬 CDF 對比 (獲得至少1目標)</h4>
+                    <div class="chart-container" id="comparisonChartContainer">
+                        <canvas id="comparisonChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ============ 全域變數 ============
+        let pmfChartInstance = null;
+        let simHistChartInstance = null;
+        let comparisonChartInstance = null;
+        let lastTheoryResult = null;
+        let lastSimResult = null;
+        let lastParams = null;
+
+        // ============ UI 切換 ============
+        function toggleInputs() {
+            const mode = document.getElementById('mode').value;
+            document.getElementById('softGroup').style.display = (mode === 'soft') ? 'grid' : 'none';
+            document.getElementById('hardGroup').style.display = (mode === 'none') ? 'none' : 'block';
+            document.getElementById('noneGroup').style.display = (mode === 'none') ? 'block' : 'none';
+        }
+
+        function toggleGuaranteeInputs() {
+            const enabled = document.getElementById('guaranteeEnabled').checked;
+            document.getElementById('guaranteeGroup').style.display = enabled ? 'block' : 'none';
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            clearTimeout(toast._timeout);
+            toast._timeout = setTimeout(() => toast.classList.remove('show'), 2200);
+        }
+
+        function readParams() {
+            const mode = document.getElementById('mode').value;
+            const baseP = parseFloat(document.getElementById('baseP').value) / 100;
+            const softX = parseInt(document.getElementById('softX').value);
+            const softY = parseFloat(document.getElementById('softY').value) / 100;
+            const queryN = parseInt(document.getElementById('queryN').value);
+            const targetK = parseInt(document.getElementById('targetK').value);
+            const guaranteeEnabled = document.getElementById('guaranteeEnabled').checked;
+            const offP = guaranteeEnabled ? parseFloat(document.getElementById('offP').value) / 100 : 0;
+            const simCount = parseInt(document.getElementById('simCount').value);
+            let N;
+            if (mode === 'none') {
+                N = parseInt(document.getElementById('customLimit').value);
+            } else {
+                N = parseInt(document.getElementById('maxN').value);
+            }
+            return { mode, baseP, softX, softY, queryN, targetK, guaranteeEnabled, offP, N, simCount };
+        }
+
+        // ============ 核心：單次SSR機率分布 ============
+        function computeSSRDistribution(params) {
+            const { mode, baseP, softX, softY, N } = params;
+            const loopLimit = Math.max(N, params.queryN || 1);
+            let labels = [];
+            let pmfData = [];
+            let cdfData = [];
+            let cumulativeFail = 1.0;
+            let currentCdf = 0.0;
+            let expectedValue = 0.0;
+            let pmfByN = {};
+
+            for (let n = 1; n <= loopLimit; n++) {
+                let currentP = baseP;
+                if (mode === 'soft') {
+                    if (n >= softX) currentP = baseP + (n - softX + 1) * softY;
+                    if (currentP > 1 || n === N) currentP = 1.0;
+                } else if (mode === 'hard') {
+                    if (n === N) currentP = 1.0;
+                } else if (mode === 'none') {
+                    currentP = baseP;
+                }
+                const pmf = cumulativeFail * currentP;
+                currentCdf += pmf;
+                pmfByN[n] = pmf;
+                if (n <= N) {
+                    labels.push(`第${n}抽`);
+                    pmfData.push(pmf * 100);
+                    cdfData.push(currentCdf * 100);
+                }
+                if (mode !== 'none' && n <= N) expectedValue += n * pmf;
+                cumulativeFail *= (1 - currentP);
+                if (mode !== 'none' && currentCdf >= 0.999999 && n >= N) break;
+            }
+            const finalE = (mode === 'none') ? (1 / baseP) : expectedValue;
+            return { labels, pmfData, cdfData, pmfByN, expectedValue: finalE, N, loopLimit };
+        }
+
+        // ============ 理論：單目標+大保底 CDF ============
+        function computeCDFWithGuarantee(ssrDist, offP, maxN) {
+            const { pmfByN } = ssrDist;
+            const cdfData = [];
+            const labels = [];
+            for (let n = 1; n <= maxN; n++) {
+                let prob = 0;
+                for (let t = 1; t <= n; t++) prob += (pmfByN[t] || 0) * (1 - offP);
+                for (let t1 = 1; t1 <= n - 1; t1++) {
+                    const f_t1 = pmfByN[t1] || 0;
+                    if (f_t1 === 0) continue;
+                    let sumF2 = 0;
+                    for (let t2 = 1; t2 <= n - t1; t2++) sumF2 += (pmfByN[t2] || 0);
+                    prob += f_t1 * offP * sumF2;
+                }
+                prob = Math.min(prob, 1.0);
+                cdfData.push(prob * 100);
+                labels.push(`第${n}抽`);
+            }
+            return { labels, cdfData };
+        }
+
+        // ============ 理論：多目標期望值 ============
+        function computeMultiTargetExpectation(ssrDist, offP, targetK) {
+            const eSSR = ssrDist.expectedValue;
+            const ePerTarget = eSSR * (1 + offP);
+            const eK = targetK * ePerTarget;
+            const multiTable = [];
+            for (let k = 1; k <= Math.max(targetK, 6); k++) {
+                multiTable.push({ k, expected: k * ePerTarget });
+            }
+            return { ePerTarget, eK, multiTable };
+        }
+
+        // ============ 蒙地卡羅模擬 ============
+        function simulateGacha(params, progressCallback) {
+            const { mode, baseP, softX, softY, N, targetK, guaranteeEnabled, offP, simCount } = params;
+            const totalDrawsList = [];
+            const effectiveN = (mode === 'none') ? Math.max(N, 300) : N;
+            const simCap = (mode === 'none') ? Math.max(N * 3, 500) : N * 3;
+
+            for (let s = 0; s < simCount; s++) {
+                let pityCounter = 0;
+                let bigGuarantee = false;
+                let targetsObtained = 0;
+                let totalDraws = 0;
+                while (targetsObtained < targetK) {
+                    totalDraws++;
+                    let currentP = baseP;
+                    if (mode === 'soft') {
+                        if (pityCounter + 1 >= softX) currentP = baseP + (pityCounter + 1 - softX + 1) * softY;
+                        if (currentP > 1 || pityCounter + 1 >= effectiveN) currentP = 1.0;
+                    } else if (mode === 'hard') {
+                        if (pityCounter + 1 >= effectiveN) currentP = 1.0;
+                    } else {
+                        currentP = baseP;
+                    }
+                    if (Math.random() < currentP) {
+                        pityCounter = 0;
+                        let isTarget;
+                        if (bigGuarantee) { isTarget = true;
+                            bigGuarantee = false; } else if (guaranteeEnabled && Math.random() < offP) { isTarget = false;
+                            bigGuarantee = true; } else { isTarget = true; }
+                        if (isTarget) targetsObtained++;
+                    } else { pityCounter++; }
+                    if (totalDraws > simCap * targetK + 500) break;
+                }
+                totalDrawsList.push(totalDraws);
+                if (progressCallback && s % Math.max(1, Math.floor(simCount / 100)) === 0) {
+                    progressCallback(s / simCount);
+                }
+            }
+            totalDrawsList.sort((a, b) => a - b);
+            const mean = totalDrawsList.reduce((a, b) => a + b, 0) / simCount;
+            const median = totalDrawsList[Math.floor(simCount / 2)];
+            const p5 = totalDrawsList[Math.floor(simCount * 0.05)];
+            const p95 = totalDrawsList[Math.floor(simCount * 0.95)];
+            return { totalDrawsList, mean, median, p5, p95, simCount };
+        }
+
+        // ============ 建立對齊尺度的直方圖bins (當targetK=1時與理論圖對齊) ============
+        function buildAlignedBins(totalDrawsList, simCount, ssrDist, targetK) {
+            const N = ssrDist.N;
+            // 只有當targetK===1且為有保底模式時，才做1抽1bin的對齊
+            if (targetK === 1 && ssrDist && N > 0) {
+                const binLabels = [];
+                const binCounts = [];
+                const binCDF = [];
+                let cumCount = 0;
+                for (let n = 1; n <= N; n++) {
+                    // 統計抽數恰好為n的次數 (因為是單目標+保底，幾乎都在N以內)
+                    let count = 0;
+                    // 使用二分查找優化
+                    for (let i = 0; i < totalDrawsList.length; i++) {
+                        if (totalDrawsList[i] === n) count++;
+                        else if (totalDrawsList[i] > n) break;
+                    }
+                    binLabels.push(`第${n}抽`);
+                    binCounts.push(count);
+                    cumCount += count;
+                    binCDF.push((cumCount / simCount) * 100);
+                }
+                return {
+                    binLabels,
+                    binCounts,
+                    binCDF,
+                    binWidth: 1,
+                    minDraw: 1,
+                    maxDraw: N,
+                    aligned: true,
+                };
+            }
+            // 否則使用自動分箱
+            const minDraw = totalDrawsList[0];
+            const maxDraw = totalDrawsList[simCount - 1];
+            const binCount = Math.min(60, Math.max(20, Math.ceil((maxDraw - minDraw) / 5)));
+            const binWidth = Math.max(1, Math.ceil((maxDraw - minDraw) / binCount));
+            const binLabels = [];
+            const binCounts = [];
+            const binCDF = [];
+            let cumCount = 0;
+            for (let b = minDraw; b <= maxDraw + binWidth; b += binWidth) {
+                const binStart = b;
+                const binEnd = b + binWidth;
+                const count = totalDrawsList.filter(d => d >= binStart && d < binEnd).length;
+                binLabels.push(`${binStart}-${binEnd - 1}抽`);
+                binCounts.push(count);
+                cumCount += count;
+                binCDF.push((cumCount / simCount) * 100);
+            }
+            return { binLabels, binCounts, binCDF, binWidth, minDraw, maxDraw, aligned: false };
+        }
+
+        // ============ 異步蒙地卡羅模擬 ============
+        function runMonteCarloAsync(params) {
+            const simProgress = document.getElementById('simProgress');
+            const simProgressBar = document.getElementById('simProgressBar');
+            const simStatus = document.getElementById('simStatus');
+            simProgress.classList.add('active');
+            simStatus.classList.add('active');
+            simProgressBar.style.width = '0%';
+            simStatus.textContent = '模擬準備中...';
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    const result = simulateGacha(params, (progress) => {
+                        simProgressBar.style.width = (progress * 100).toFixed(0) + '%';
+                        simStatus.textContent =
+                            `模擬進度: ${(progress * 100).toFixed(0)}% (${Math.round(progress * params.simCount)}/${params.simCount})`;
+                    });
+                    simProgressBar.style.width = '100%';
+                    simStatus.textContent = `✅ 模擬完成！共 ${params.simCount} 次`;
+                    setTimeout(() => {
+                        simProgress.classList.remove('active');
+                        simStatus.classList.remove('active');
+                    }, 1500);
+                    resolve(result);
+                }, 50);
+            });
+        }
+
+        // ============ 繪製理論圖表 ============
+        function drawTheoryCharts(ssrDist) {
+            const { labels, pmfData, cdfData } = ssrDist;
+            const ctxPmf = document.getElementById('pmfChart').getContext('2d');
+            if (pmfChartInstance) pmfChartInstance.destroy();
+            pmfChartInstance = new Chart(ctxPmf, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'PMF 剛好在該抽中SSR (%)',
+                        data: pmfData,
+                        backgroundColor: 'rgba(79,110,247,0.55)',
+                        borderColor: 'rgba(79,110,247,0.9)',
+                        borderWidth: 0.5,
+                        barPercentage: 1.0,
+                        categoryPercentage: 1.0,
+                        yAxisID: 'y',
+                        order: 2,
+                    }, {
+                        label: 'CDF 累積出貨機率 (%)',
+                        data: cdfData,
+                        type: 'line',
+                        borderColor: 'rgba(16,185,129,1)',
+                        backgroundColor: 'rgba(16,185,129,0.08)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        pointRadius: labels.length > 100 ? 0 : 1.5,
+                        yAxisID: 'y',
+                        order: 1,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: '機率 (%)' }, max: 100 },
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 14, padding: 10, font: { size: 10 } } },
+                    },
+                },
+            });
+        }
+
+        // ============ 繪製模擬直方圖 (支援對齊尺度) ============
+        function drawSimHistogram(simResult, targetK, ssrDist) {
+            const ctx = document.getElementById('simHistChart').getContext('2d');
+            if (simHistChartInstance) simHistChartInstance.destroy();
+
+            const { totalDrawsList, simCount, mean } = simResult;
+            const binData = buildAlignedBins(totalDrawsList, simCount, ssrDist, targetK);
+            const { binLabels, binCounts, binCDF, aligned } = binData;
+
+            // 顯示/隱藏對齊提示
+            const simAlignHint = document.getElementById('simAlignHint');
+            const alignBadge = document.getElementById('alignBadge');
+            const alignHint = document.getElementById('alignHint');
+            if (aligned) {
+                simAlignHint.style.display = 'block';
+                alignBadge.style.display = 'inline';
+                alignHint.style.display = 'block';
+            } else {
+                simAlignHint.style.display = 'none';
+                alignBadge.style.display = 'none';
+                alignHint.style.display = 'none';
+            }
+
+            simHistChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: binLabels,
+                    datasets: [{
+                        label: `模擬頻次 (獲得${targetK}目標所需抽數)`,
+                        data: binCounts,
+                        backgroundColor: 'rgba(245,158,11,0.55)',
+                        borderColor: 'rgba(245,158,11,0.9)',
+                        borderWidth: 0.5,
+                        barPercentage: 1.0,
+                        categoryPercentage: 1.0,
+                        yAxisID: 'y',
+                        order: 2,
+                    }, {
+                        label: '累積CDF (%)',
+                        data: binCDF,
+                        type: 'line',
+                        borderColor: 'rgba(239,68,68,0.9)',
+                        backgroundColor: 'rgba(239,68,68,0.05)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        pointRadius: binLabels.length > 60 ? 0 : 1.5,
+                        yAxisID: 'y1',
+                        order: 1,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: '頻次' },
+                            position: 'left',
+                        },
+                        y1: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: '累積CDF (%)' },
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                        },
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 14, padding: 10, font: { size: 10 } } },
+                    },
+                },
+            });
+        }
+
+        // ============ 繪製理論 vs 模擬 CDF 對比圖 ============
+        function drawComparisonChart(ssrDist, simResult, offP, targetK) {
+            const ctx = document.getElementById('comparisonChart').getContext('2d');
+            if (comparisonChartInstance) comparisonChartInstance.destroy();
+
+            const maxN = ssrDist.N;
+            let theoryCDFData = [];
+            let theoryLabels = [];
+
+            // 理論CDF：僅在targetK===1時計算（多目標理論CDF較複雜，此處以模擬為主）
+            if (targetK === 1 && offP > 0) {
+                const gcdf = computeCDFWithGuarantee(ssrDist, offP, maxN);
+                theoryCDFData = gcdf.cdfData;
+                theoryLabels = gcdf.labels;
+            } else if (targetK === 1 && offP === 0) {
+                theoryCDFData = ssrDist.cdfData;
+                theoryLabels = ssrDist.labels;
+            }
+
+            // 模擬CDF：始終生成（只要有模擬結果）
+            let simCDFData = [];
+            let simLabels = [];
+            if (simResult && simResult.totalDrawsList && simResult.totalDrawsList.length > 0) {
+                const draws = simResult.totalDrawsList;
+                const simCount = simResult.simCount;
+                // 限制最大抽數範圍，避免數據點過多
+                const dataMax = draws[draws.length - 1];
+                const nMax = Math.min(dataMax, Math.max(maxN * 3, 300));
+                const step = Math.max(1, Math.ceil(nMax / 200)); // 最多200個數據點
+                for (let n = 1; n <= nMax; n += step) {
+                    let countLE = 0;
+                    for (let i = 0; i < draws.length; i++) {
+                        if (draws[i] <= n) countLE++;
+                        else break;
+                    }
+                    simLabels.push(`第${n}抽`);
+                    simCDFData.push((countLE / simCount) * 100);
+                }
+                // 確保最後一個點在nMax
+                if (simLabels.length > 0 && parseInt(simLabels[simLabels.length - 1]) < nMax) {
+                    let countLE = 0;
+                    for (let i = 0; i < draws.length; i++) {
+                        if (draws[i] <= nMax) countLE++;
+                        else break;
+                    }
+                    simLabels.push(`第${nMax}抽`);
+                    simCDFData.push((countLE / simCount) * 100);
+                }
+            }
+
+            // 建立datasets
+            const datasets = [];
+            if (theoryCDFData.length > 0) {
+                datasets.push({
+                    label: '理論CDF (含大保底)',
+                    data: theoryCDFData,
+                    borderColor: 'rgba(16,185,129,1)',
+                    backgroundColor: 'rgba(16,185,129,0.06)',
+                    borderWidth: 2.5,
+                    fill: false,
+                    pointRadius: 0,
+                    tension: 0.1,
+                });
+            }
+            if (simCDFData.length > 0) {
+                datasets.push({
+                    label: `蒙地卡羅模擬CDF (${targetK}目標)`,
+                    data: simCDFData,
+                    borderColor: 'rgba(245,158,11,1)',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    borderDash: [6, 3],
+                    fill: false,
+                    pointRadius: 0,
+                    tension: 0.1,
+                });
+            }
+
+            // 決定labels
+            let chartLabels;
+            if (theoryLabels.length > 0 && simLabels.length > 0) {
+                // 兩者都有時，使用理論labels作為基準（範圍較小的那個），sim數據自動對齊
+                chartLabels = theoryLabels;
+            } else if (theoryLabels.length > 0) {
+                chartLabels = theoryLabels;
+            } else {
+                chartLabels = simLabels;
+            }
+
+            comparisonChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: datasets,
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, max: 100, title: { display: true, text: '累積機率 (%)' } },
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 14, padding: 10, font: { size: 10 } } },
+                    },
+                },
+            });
+
+            // 確保wrapper顯示（只要有任一數據就顯示）
+            const wrapper = document.getElementById('comparisonChartWrapper');
+            wrapper.style.display = (datasets.length > 0) ? 'block' : 'none';
+        }
+
+        // ============ 更新結果顯示 ============
+        function updateResults(params, ssrDist, simResult) {
+            const { targetK, offP, guaranteeEnabled, queryN } = params;
+            const multiInfo = computeMultiTargetExpectation(ssrDist, offP, targetK);
+            document.getElementById('kLabel1').textContent = targetK;
+            document.getElementById('kLabel2').textContent = targetK;
+            document.getElementById('queryNLabel').textContent = queryN;
+            document.getElementById('resE_ssr').textContent = ssrDist.expectedValue.toFixed(2) + ' 抽';
+            document.getElementById('resE_target').textContent = (guaranteeEnabled ?
+                (ssrDist.expectedValue * (1 + offP)).toFixed(2) :
+                ssrDist.expectedValue.toFixed(2)) + ' 抽';
+            document.getElementById('resE_k').textContent = multiInfo.eK.toFixed(2) + ' 抽';
+
+            let atLeastOneProb;
+            if (guaranteeEnabled && offP > 0) {
+                const gcdf = computeCDFWithGuarantee(ssrDist, offP, Math.max(queryN, ssrDist.N));
+                atLeastOneProb = gcdf.cdfData[Math.min(queryN - 1, gcdf.cdfData.length - 1)] || 0;
+            } else {
+                atLeastOneProb = (ssrDist.cdfData[Math.min(queryN - 1, ssrDist.cdfData.length - 1)] || 0);
+            }
+            document.getElementById('resAtLeastOne').textContent = atLeastOneProb.toFixed(4) + '%';
+
+            if (simResult) {
+                document.getElementById('resSimMean').textContent = simResult.mean.toFixed(2) + ' 抽';
+                const theoryEK = multiInfo.eK;
+                const diff = Math.abs(simResult.mean - theoryEK);
+                const diffPct = theoryEK > 0 ? (diff / theoryEK * 100).toFixed(2) : 'N/A';
+                document.getElementById('resDiff').textContent = diff.toFixed(2) + ' 抽 (' + diffPct + '%)';
+                document.getElementById('resDiff').className = 'result-value ' + (parseFloat(diffPct) < 5 ? 'green' : '');
+            } else {
+                document.getElementById('resSimMean').textContent = '尚未模擬';
+                document.getElementById('resDiff').textContent = '-';
+            }
+
+            let tableHTML = '<table class="comparison-table"><tr><th>目標數量</th><th>理論期望抽數</th>';
+            if (simResult && targetK <= 6) tableHTML += '<th>模擬參考</th>';
+            tableHTML += '</tr>';
+            for (const row of multiInfo.multiTable) {
+                if (row.k > Math.max(targetK, 6)) break;
+                tableHTML += `<tr><td>${row.k} 個</td><td>${row.expected.toFixed(2)} 抽</td>`;
+                if (simResult && row.k === targetK && row.k <= 6) {
+                    tableHTML += `<td class="match">${simResult.mean.toFixed(2)} 抽</td>`;
+                } else if (simResult && row.k <= 6) {
+                    tableHTML += '<td>-</td>';
+                }
+                tableHTML += '</tr>';
+            }
+            tableHTML += '</table>';
+            document.getElementById('multiExpectTable').innerHTML = tableHTML;
+        }
+
+        // ============ 主要計算流程 ============
+        async function calculateAll() {
+            const params = readParams();
+            lastParams = params;
+            if (isNaN(params.baseP) || params.baseP <= 0 || isNaN(params.N) || params.N <= 0) {
+                alert('請輸入正確的參數數值！');
+                return;
+            }
+            const ssrDist = computeSSRDistribution(params);
+            lastTheoryResult = { ssrDist, params: { ...params } };
+            drawTheoryCharts(ssrDist);
+
+            const simResult = await runMonteCarloAsync(params);
+            lastSimResult = simResult;
+            // 傳入ssrDist以支援尺度對齊
+            drawSimHistogram(simResult, params.targetK, ssrDist);
+            drawComparisonChart(ssrDist, simResult, params.offP, params.targetK);
+            updateResults(params, ssrDist, simResult);
+            showToast('✅ 全部計算完成！');
+        }
+
+        async function runMonteCarloOnly() {
+            const params = readParams();
+            lastParams = params;
+            if (isNaN(params.baseP) || params.baseP <= 0 || isNaN(params.N) || params.N <= 0) {
+                alert('請輸入正確的參數數值！');
+                return;
+            }
+            const ssrDist = computeSSRDistribution(params);
+            lastTheoryResult = { ssrDist, params: { ...params } };
+            drawTheoryCharts(ssrDist);
+
+            const simResult = await runMonteCarloAsync(params);
+            lastSimResult = simResult;
+            drawSimHistogram(simResult, params.targetK, ssrDist);
+            drawComparisonChart(ssrDist, simResult, params.offP, params.targetK);
+            updateResults(params, ssrDist, simResult);
+            showToast('🎲 蒙地卡羅模擬完成！');
+        }
+
+        // ============ 導出CSV ============
+        function exportCSV() {
+            if (!lastTheoryResult && !lastSimResult) { alert('請先進行計算！'); return; }
+            let csvRows = ['類型,抽數/區間,PMF(%),CDF(%),模擬頻次,模擬CDF(%)'];
+            if (lastTheoryResult) {
+                const { ssrDist, params } = lastTheoryResult;
+                const { labels, pmfData, cdfData } = ssrDist;
+                for (let i = 0; i < labels.length; i++) {
+                    csvRows.push(`理論SSR分布,${labels[i]},${pmfData[i].toFixed(4)},${cdfData[i].toFixed(4)},,`);
+                }
+                if (params.guaranteeEnabled && params.offP > 0) {
+                    const gcdf = computeCDFWithGuarantee(ssrDist, params.offP, ssrDist.N);
+                    for (let i = 0; i < gcdf.labels.length; i++) {
+                        csvRows.push(`理論含大保底CDF,${gcdf.labels[i]},,${gcdf.cdfData[i].toFixed(4)},,`);
+                    }
+                }
+            }
+            if (lastSimResult && lastTheoryResult) {
+                const { totalDrawsList, simCount } = lastSimResult;
+                const ssrDist = lastTheoryResult.ssrDist;
+                const targetK = lastParams ? lastParams.targetK : 1;
+                const binData = buildAlignedBins(totalDrawsList, simCount, ssrDist, targetK);
+                for (let i = 0; i < binData.binLabels.length; i++) {
+                    csvRows.push(
+                        `蒙地卡羅模擬,${binData.binLabels[i]},${(binData.binCounts[i]/simCount*100).toFixed(4)},${binData.binCDF[i].toFixed(4)},${binData.binCounts[i]},${binData.binCDF[i].toFixed(4)}`
+                    );
+                }
+            }
+            const csvContent = '\uFEFF' + csvRows.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `gacha_simulation_${new Date().toISOString().slice(0,10)}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+            showToast('📥 CSV檔案已下載！');
+        }
+
+        // ============ 複製摘要 ============
+        function copyResults() {
+            if (!lastTheoryResult) { alert('請先進行計算！'); return; }
+            const { ssrDist, params } = lastTheoryResult;
+            const multiInfo = computeMultiTargetExpectation(ssrDist, params.offP, params.targetK);
+            let text = '【抽卡模擬結果摘要】\n';
+            text += `保底模式: ${params.mode}\n`;
+            text += `基礎SSR機率: ${(params.baseP*100).toFixed(2)}%\n`;
+            text += `保底抽數N: ${params.N}\n`;
+            text += `大保底: ${params.guaranteeEnabled ? '啟用 (歪卡率'+(params.offP*100).toFixed(1)+'%)' : '未啟用'}\n`;
+            text += `預期目標數量: ${params.targetK}\n`;
+            text += `---\n`;
+            text += `單次SSR期望抽數: ${ssrDist.expectedValue.toFixed(2)} 抽\n`;
+            text += `含大保底1目標期望: ${(ssrDist.expectedValue*(1+params.offP)).toFixed(2)} 抽\n`;
+            text += `獲得${params.targetK}目標期望: ${multiInfo.eK.toFixed(2)} 抽\n`;
+            if (lastSimResult) {
+                text +=
+                    `蒙地卡羅平均: ${lastSimResult.mean.toFixed(2)} 抽 (${lastSimResult.simCount}次模擬)\n`;
+                text += `模擬範圍: ${lastSimResult.p5}~${lastSimResult.p95} 抽 (5%~95%)\n`;
+            }
+            text += `查詢${params.queryN}抽內至少1目標: ${document.getElementById('resAtLeastOne').textContent}\n`;
+            navigator.clipboard.writeText(text).then(() => showToast('📋 摘要已複製！')).catch(() => alert('複製失敗，請手動複製。\n\n' + text));
+        }
+
+        // ============ 分享URL ============
+        function shareURL() {
+            const params = readParams();
+            const hashParts = [];
+            hashParts.push('mode=' + encodeURIComponent(params.mode));
+            hashParts.push('baseP=' + encodeURIComponent(params.baseP));
+            hashParts.push('softX=' + encodeURIComponent(params.softX));
+            hashParts.push('softY=' + encodeURIComponent(params.softY));
+            hashParts.push('maxN=' + encodeURIComponent(params.N));
+            hashParts.push('customLimit=' + encodeURIComponent(document.getElementById('customLimit').value));
+            hashParts.push('guarantee=' + (params.guaranteeEnabled ? '1' : '0'));
+            hashParts.push('offP=' + encodeURIComponent(params.offP));
+            hashParts.push('targetK=' + encodeURIComponent(params.targetK));
+            hashParts.push('queryN=' + encodeURIComponent(params.queryN));
+            hashParts.push('simCount=' + encodeURIComponent(params.simCount));
+            const url = window.location.origin + window.location.pathname + '#' + hashParts.join('&');
+            navigator.clipboard.writeText(url).then(() => showToast('🔗 分享連結已複製！')).catch(() => prompt('複製此連結分享：',
+                url));
+        }
+
+        function loadFromHash() {
+            const hash = window.location.hash.substring(1);
+            if (!hash) return;
+            const parts = hash.split('&');
+            const map = {};
+            parts.forEach(p => { const [k, v] = p.split('='); if (k && v !== undefined) map[k] = decodeURIComponent(v); });
+            if (map['mode']) document.getElementById('mode').value = map['mode'];
+            if (map['baseP']) document.getElementById('baseP').value = (parseFloat(map['baseP']) * 100).toFixed(2);
+            if (map['softX']) document.getElementById('softX').value = map['softX'];
+            if (map['softY']) document.getElementById('softY').value = (parseFloat(map['softY']) * 100).toFixed(1);
+            if (map['maxN']) document.getElementById('maxN').value = map['maxN'];
+            if (map['customLimit']) document.getElementById('customLimit').value = map['customLimit'];
+            if (map['guarantee'] === '1') { document.getElementById('guaranteeEnabled').checked = true;
+                toggleGuaranteeInputs(); }
+            if (map['offP']) document.getElementById('offP').value = (parseFloat(map['offP']) * 100).toFixed(1);
+            if (map['targetK']) document.getElementById('targetK').value = map['targetK'];
+            if (map['queryN']) document.getElementById('queryN').value = map['queryN'];
+            if (map['simCount']) document.getElementById('simCount').value = map['simCount'];
+            toggleInputs();
+        }
+
+        window.onload = function() {
+            toggleInputs();
+            toggleGuaranteeInputs();
+            loadFromHash();
+            if (window.location.hash.length > 1) {
+                setTimeout(() => calculateAll(), 400);
+            } else {
+                setTimeout(() => calculateAll(), 300);
+            }
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') { e.preventDefault();
+                calculateAll(); }
+            if (e.ctrlKey && e.key === 'm') { e.preventDefault();
+                runMonteCarloOnly(); }
+        });
+    </script>
+</body>
+</html>
