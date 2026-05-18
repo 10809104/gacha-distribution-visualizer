@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>抽卡機率與分布模擬器 (可自訂顯示抽數)</title>
+    <title>抽卡機率與分布模擬器</title>
     <!-- 引入 Chart.js 用於畫圖 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -201,14 +201,12 @@
     }
 
     function calculateAndDraw() {
-        // 1. 讀取輸入參數
         const mode = document.getElementById('mode').value;
         const baseP = parseFloat(document.getElementById('baseP').value) / 100;
         const softX = parseInt(document.getElementById('softX').value);
         const softY = parseFloat(document.getElementById('softY').value) / 100;
         const queryN = parseInt(document.getElementById('targetN').value);
         
-        // 動態決定計算與繪圖的最大抽數上限
         let N = 90;
         if (mode === 'none') {
             N = parseInt(document.getElementById('customLimit').value);
@@ -216,7 +214,6 @@
             N = parseInt(document.getElementById('maxN').value);
         }
 
-        // 參數防呆檢查
         if (isNaN(baseP) || baseP <= 0 || isNaN(N) || N <= 0 || isNaN(queryN) || queryN <= 0) {
             alert('請輸入正確的參數數值！');
             return;
@@ -235,13 +232,20 @@
         
         let queryAtLeastOne = 0;
         let queryNone = 0;
-        let queryCalculated = false;
 
-        // 2. 核心數學計算迴圈 (確保至少計算到使用者查詢的 queryN 抽)
-        let loopLimit = Math.max(N, queryN);
+        // 【精準修正 1】：如果無保底，查詢點直接用筆記第三章的數學解析式（閉合形式）計算，防止截斷點限制
+        if (mode === 'none') {
+            queryAtLeastOne = 1 - Math.pow(1 - baseP, queryN);
+            queryNone = Math.pow(1 - baseP, queryN);
+        } 
+        // 【精準修正 2】：如果有保底，且查詢抽數已經大於等於保底上限 N，直接依據定義給予邊界斷崖值
+        else if (queryN >= N) {
+            queryAtLeastOne = 1.0;
+            queryNone = 0.0;
+        }
 
-        for (let n = 1; n <= loopLimit; n++) {
-            // 計算第 n 抽的當下單抽機率 p_n
+        // 核心計算迴圈（範圍嚴格限制在繪圖上限 N 內，不再讓迴圈無效益越界）
+        for (let n = 1; n <= N; n++) {
             let currentSingleP = baseP;
             
             if (mode === 'soft') {
@@ -255,44 +259,36 @@
                 if (n === N) {
                     currentSingleP = 1.0;
                 }
-            } else if (mode === 'none') {
-                // 無保底時，若前面已經強行抽中，後面機率維持不變
-                currentSingleP = baseP;
             }
 
-            // PMF: 前面都沒中的機率 * 這一抽中的機率
+            // PMF 與 CDF 演算
             let currentPmf = cumulativeFailProbability * currentSingleP;
             currentCdf += currentPmf;
             
-            // 只把屬於繪圖範圍 (1 ~ N) 的數據塞進圖表
-            if (n <= N) {
-                labels.push(`第 ${n} 抽`);
-                pmfData.push(currentPmf * 100);
-                cdfData.push(currentCdf * 100);
-            }
+            labels.push(`第 ${n} 抽`);
+            pmfData.push(currentPmf * 100);
+            cdfData.push(currentCdf * 100);
             
-            // 只有在範圍內且有保底時，才用窮舉計算期望值
-            if (mode !== 'none' && n <= N) {
+            if (mode !== 'none') {
                 expectedValue += n * currentPmf;
             }
 
-            // 紀錄查詢特定抽數 n 點的累積值
-            if (n === queryN) {
+            // 【精準修正 3】：有保底且查詢點在保底之內 (queryN < N)，在迴圈內部精確捕捉
+            if (mode !== 'none' && queryN < N && n === queryN) {
                 queryAtLeastOne = currentCdf;
                 queryNone = cumulativeFailProbability * (1 - currentSingleP);
-                queryCalculated = true;
             }
 
-            // 更新累積沒中機率
+            // 更新生存函數（累積沒中率）
             cumulativeFailProbability *= (1 - currentSingleP);
 
-            // 如果是有保底機制，且累積中獎率已實質封頂，提早中斷避免後續無意義計算
-            if (mode !== 'none' && currentCdf >= 0.999999 && n >= N) {
+            // 實質封頂提早中斷
+            if (mode !== 'none' && currentCdf >= 0.999999) {
                 break;
             }
         }
 
-        // 3. 渲染計算指標
+        // 3. 渲染計算指標（無保底期望值完全對齊幾何分布 E = 1/p）
         let finalE = (mode === 'none') ? (1 / baseP) : expectedValue;
         document.getElementById('resE').innerText = finalE.toFixed(2);
         document.getElementById('resPtotal').innerText = ((1 / finalE) * 100).toFixed(4) + '%';
