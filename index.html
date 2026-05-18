@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抽卡機率與分布模擬器 (可自訂顯示抽數)</title>
+    <!-- 引入 Chart.js 用於畫圖 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+        }
+        @media (max-width: 900px) {
+            .dashboard { grid-template-columns: 1fr; }
+        }
+        .panel {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #4a5568;
+            font-size: 14px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #2563eb;
+        }
+        .results {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px dashed #e2e8f0;
+        }
+        .result-item {
+            margin-bottom: 10px;
+            font-size: 15px;
+        }
+        .result-value {
+            font-weight: bold;
+            color: #1e40af;
+        }
+        .chart-container {
+            position: relative;
+            margin-bottom: 20px;
+            height: 320px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>抽卡機率與分布模擬器</h1>
+    
+    <div class="dashboard">
+        <!-- 左側：參數輸入面板 -->
+        <div class="panel">
+            <h3>參數設定</h3>
+            <div class="form-group">
+                <label for="mode">保底機制</label>
+                <select id="mode" onchange="toggleInputs()">
+                    <option value="soft">軟保底模型 (Soft Cap)</option>
+                    <option value="hard">硬保底模型 (Fixed Cap)</option>
+                    <option value="none">無保底模型</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="baseP">基礎單抽機率 $p$ (%)</label>
+                <input type="number" id="baseP" value="0.6" step="0.1" min="0.001" max="100">
+            </div>
+            
+            <!-- 軟保底專用參數 -->
+            <div class="form-row" id="softGroup">
+                <div>
+                    <label for="softX">從第幾抽開始提升 ($x$)</label>
+                    <input type="number" id="softX" value="74" min="1">
+                </div>
+                <div>
+                    <label for="softY">每抽提升機率 $y$ (%)</label>
+                    <input type="number" id="softY" value="6.0" step="0.1" min="0">
+                </div>
+            </div>
+
+            <!-- 有保底時顯示 N -->
+            <div class="form-group" id="hardGroup">
+                <label for="maxN">強制保底抽數 $N$</label>
+                <input type="number" id="maxN" value="90" min="2">
+            </div>
+
+            <!-- 無保底時顯示自訂繪圖範圍 -->
+            <div class="form-group" id="noneGroup" style="display: none;">
+                <label for="customLimit">無保底顯示抽數上限</label>
+                <input type="number" id="customLimit" value="200" min="1">
+            </div>
+
+            <div class="form-group">
+                <label for="targetN">查詢特定抽數 $n$</label>
+                <input type="number" id="targetN" value="50" min="1">
+            </div>
+            <button onclick="calculateAndDraw()">開始計算與繪圖</button>
+
+            <!-- 數據計算結果顯示 -->
+            <div class="results">
+                <h3>計算指標</h3>
+                <div class="result-item">期望抽數 ($E$): <span id="resE" class="result-value">-</span> 抽</div>
+                <div class="result-item">綜合勝率 ($P_{\text{total}}$): <span id="resPtotal" class="result-value">-</span></div>
+                <div class="result-item"><span id="queryNText">n</span> 抽內至少中一次機率: <span id="resAtLeastOne" class="result-value">-</span></div>
+                <div class="result-item"><span id="queryNText2">n</span> 抽內完全沒中機率: <span id="resNone" class="result-value">-</span></div>
+            </div>
+        </div>
+
+        <!-- 右側：圖表顯示面板 -->
+        <div>
+            <div class="chart-container">
+                <canvas id="pmfChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="cdfChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let pmfChartInstance = null;
+    let cdfChartInstance = null;
+
+    function toggleInputs() {
+        const mode = document.getElementById('mode').value;
+        const softGroup = document.getElementById('softGroup');
+        const hardGroup = document.getElementById('hardGroup');
+        const noneGroup = document.getElementById('noneGroup');
+
+        if (mode === 'soft') {
+            softGroup.style.display = 'grid';
+            hardGroup.style.display = 'block';
+            noneGroup.style.display = 'none';
+        } else if (mode === 'hard') {
+            softGroup.style.display = 'none';
+            hardGroup.style.display = 'block';
+            noneGroup.style.display = 'none';
+        } else {
+            softGroup.style.display = 'none';
+            hardGroup.style.display = 'none';
+            noneGroup.style.display = 'block';
+        }
+    }
+
+    function calculateAndDraw() {
+        // 1. 讀取輸入參數
+        const mode = document.getElementById('mode').value;
+        const baseP = parseFloat(document.getElementById('baseP').value) / 100;
+        const softX = parseInt(document.getElementById('softX').value);
+        const softY = parseFloat(document.getElementById('softY').value) / 100;
+        const queryN = parseInt(document.getElementById('targetN').value);
+        
+        // 動態決定計算與繪圖的最大抽數上限
+        let N = 90;
+        if (mode === 'none') {
+            N = parseInt(document.getElementById('customLimit').value);
+        } else {
+            N = parseInt(document.getElementById('maxN').value);
+        }
+
+        // 參數防呆檢查
+        if (isNaN(baseP) || baseP <= 0 || isNaN(N) || N <= 0 || isNaN(queryN) || queryN <= 0) {
+            alert('請輸入正確的參數數值！');
+            return;
+        }
+
+        document.getElementById('queryNText').innerText = queryN;
+        document.getElementById('queryNText2').innerText = queryN;
+
+        let labels = [];
+        let pmfData = [];
+        let cdfData = [];
+        
+        let cumulativeFailProbability = 1.0; 
+        let currentCdf = 0.0;
+        let expectedValue = 0.0;
+        
+        let queryAtLeastOne = 0;
+        let queryNone = 0;
+        let queryCalculated = false;
+
+        // 2. 核心數學計算迴圈 (確保至少計算到使用者查詢的 queryN 抽)
+        let loopLimit = Math.max(N, queryN);
+
+        for (let n = 1; n <= loopLimit; n++) {
+            // 計算第 n 抽的當下單抽機率 p_n
+            let currentSingleP = baseP;
+            
+            if (mode === 'soft') {
+                if (n >= softX) {
+                    currentSingleP = baseP + (n - softX + 1) * softY;
+                }
+                if (currentSingleP > 1 || n === N) {
+                    currentSingleP = 1.0;
+                }
+            } else if (mode === 'hard') {
+                if (n === N) {
+                    currentSingleP = 1.0;
+                }
+            } else if (mode === 'none') {
+                // 無保底時，若前面已經強行抽中，後面機率維持不變
+                currentSingleP = baseP;
+            }
+
+            // PMF: 前面都沒中的機率 * 這一抽中的機率
+            let currentPmf = cumulativeFailProbability * currentSingleP;
+            currentCdf += currentPmf;
+            
+            // 只把屬於繪圖範圍 (1 ~ N) 的數據塞進圖表
+            if (n <= N) {
+                labels.push(`第 ${n} 抽`);
+                pmfData.push(currentPmf * 100);
+                cdfData.push(currentCdf * 100);
+            }
+            
+            // 只有在範圍內且有保底時，才用窮舉計算期望值
+            if (mode !== 'none' && n <= N) {
+                expectedValue += n * currentPmf;
+            }
+
+            // 紀錄查詢特定抽數 n 點的累積值
+            if (n === queryN) {
+                queryAtLeastOne = currentCdf;
+                queryNone = cumulativeFailProbability * (1 - currentSingleP);
+                queryCalculated = true;
+            }
+
+            // 更新累積沒中機率
+            cumulativeFailProbability *= (1 - currentSingleP);
+
+            // 如果是有保底機制，且累積中獎率已實質封頂，提早中斷避免後續無意義計算
+            if (mode !== 'none' && currentCdf >= 0.999999 && n >= N) {
+                break;
+            }
+        }
+
+        // 3. 渲染計算指標
+        let finalE = (mode === 'none') ? (1 / baseP) : expectedValue;
+        document.getElementById('resE').innerText = finalE.toFixed(2);
+        document.getElementById('resPtotal').innerText = ((1 / finalE) * 100).toFixed(4) + '%';
+        document.getElementById('resAtLeastOne').innerText = (queryAtLeastOne * 100).toFixed(4) + '%';
+        document.getElementById('resNone').innerText = (queryNone * 100).toFixed(4) + '%';
+
+        // 4. 繪製 PMF 圖表
+        if (pmfChartInstance) pmfChartInstance.destroy();
+        const ctxPmf = document.getElementById('pmfChart').getContext('2d');
+        pmfChartInstance = new Chart(ctxPmf, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '剛好在該抽中獎的機率 PMF (%)',
+                    data: pmfData,
+                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1,
+                    barPercentage: 1.0,
+                    categoryPercentage: 1.0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: '機率 (%)' } }
+                }
+            }
+        });
+
+        // 5. 繪製 CDF 圖表
+        if (cdfChartInstance) cdfChartInstance.destroy();
+        const ctxCdf = document.getElementById('cdfChart').getContext('2d');
+        cdfChartInstance = new Chart(ctxCdf, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'n 抽內累積出貨總機率 CDF (%)',
+                    data: cdfData,
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    borderColor: 'rgba(16, 185, 129, 1)',
+                    borderWidth: 2,
+                    fill: true,
+                    pointRadius: labels.length > 100 ? 0 : 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, max: 100, title: { display: true, text: '累積機率 (%)' } }
+                }
+            }
+        });
+    }
+
+    window.onload = function() {
+        toggleInputs();
+        calculateAndDraw();
+    };
+</script>
+
+</body>
+</html>
