@@ -905,91 +905,88 @@
         function drawComparisonChart(ssrDist, simResult, offP, targetK) {
             const ctx = document.getElementById('comparisonChart').getContext('2d');
             if (comparisonChartInstance) comparisonChartInstance.destroy();
-
-            const maxN = ssrDist.N;
+        
+            let chartLabels = [];
             let theoryCDFData = [];
-            let theoryLabels = [];
-
-            // 理論CDF：僅在targetK===1時計算（多目標理論CDF較複雜，此處以模擬為主）
-            if (targetK === 1 && offP > 0) {
-                const gcdf = computeCDFWithGuarantee(ssrDist, offP, maxN);
-                theoryCDFData = gcdf.cdfData;
-                theoryLabels = gcdf.labels;
-            } else if (targetK === 1 && offP === 0) {
-                theoryCDFData = ssrDist.cdfData;
-                theoryLabels = ssrDist.labels;
-            }
-
-            // 模擬CDF：始終生成（只要有模擬結果）
             let simCDFData = [];
-            let simLabels = [];
-            if (simResult && simResult.totalDrawsList && simResult.totalDrawsList.length > 0) {
-                const draws = simResult.totalDrawsList;
-                const simCount = simResult.simCount;
-                // 限制最大抽數範圍，避免數據點過多
-                const dataMax = draws[draws.length - 1];
-                const nMax = Math.min(dataMax, Math.max(maxN * 3, 300));
-                const step = Math.max(1, Math.ceil(nMax / 200)); // 最多200個數據點
-                for (let n = 1; n <= nMax; n += step) {
-                    let countLE = 0;
-                    for (let i = 0; i < draws.length; i++) {
-                        if (draws[i] <= n) countLE++;
-                        else break;
-                    }
-                    simLabels.push(`第${n}抽`);
-                    simCDFData.push((countLE / simCount) * 100);
+        
+            // --- 1. 決定數據源與對齊標籤 ---
+            if (targetK === 1) {
+                // 單目標：以理論的 labels 作為統一樣式基準
+                chartLabels = ssrDist.labels;
+        
+                // 理論 CDF 資料處理
+                if (offP > 0) {
+                    const gcdf = computeCDFWithGuarantee(ssrDist, offP, ssrDist.N);
+                    theoryCDFData = gcdf.cdfData;
+                } else {
+                    theoryCDFData = ssrDist.cdfData;
                 }
-                // 確保最後一個點在nMax
-                if (simLabels.length > 0 && parseInt(simLabels[simLabels.length - 1]) < nMax) {
-                    let countLE = 0;
-                    for (let i = 0; i < draws.length; i++) {
-                        if (draws[i] <= nMax) countLE++;
-                        else break;
+        
+                // 模擬 CDF 資料處理：依據 chartLabels 的抽數精準對齊
+                if (simResult && simResult.totalDrawsList && simResult.totalDrawsList.length > 0) {
+                    const draws = simResult.totalDrawsList;
+                    const simCount = simResult.simCount;
+        
+                    // 為了效能與統一，直接映射理論的每一個抽數點
+                    let currentIdx = 0;
+                    for (let i = 0; i < chartLabels.length; i++) {
+                        // 從 "第X抽" 中解析出純數字
+                        const n = parseInt(chartLabels[i].replace(/[^0-9]/g, '')) || (i + 1);
+                        
+                        // 計算小於等於 n 抽的累計次數
+                        while (currentIdx < draws.length && draws[currentIdx] <= n) {
+                            currentIdx++;
+                        }
+                        simCDFData.push((currentIdx / simCount) * 100);
                     }
-                    simLabels.push(`第${nMax}抽`);
-                    simCDFData.push((countLE / simCount) * 100);
+                }
+            } else {
+                // 多目標：此時沒有單目標理論線，風格改為與「模擬直方圖」完全對齊
+                // 直接調用 buildAlignedBins 的結果來確保標籤與間距一致
+                if (simResult && simResult.totalDrawsList && simResult.totalDrawsList.length > 0) {
+                    const binData = buildAlignedBins(simResult.totalDrawsList, simResult.simCount, ssrDist, targetK);
+                    chartLabels = binData.binLabels;
+                    simCDFData = binData.binCDF; // 直方圖算好的累積 CDF
                 }
             }
-
-            // 建立datasets
+        
+            // --- 2. 建立 Datasets (配色、線條與前兩張圖完全同步) ---
             const datasets = [];
+            
+            // 理論線風格：承襲第一個圖表的 CDF 線條 (綠色、有微幅漸層填滿)
             if (theoryCDFData.length > 0) {
                 datasets.push({
                     label: '理論CDF (含大保底)',
                     data: theoryCDFData,
+                    type: 'line',
                     borderColor: 'rgba(16,185,129,1)',
-                    backgroundColor: 'rgba(16,185,129,0.06)',
+                    backgroundColor: 'rgba(16,185,129,0.08)',
                     borderWidth: 2.5,
-                    fill: false,
-                    pointRadius: 0,
-                    tension: 0.1,
+                    fill: true,
+                    pointRadius: chartLabels.length > 100 ? 0 : 1.5,
+                    order: 1,
                 });
             }
+        
+            // 模擬線風格：承襲第二個圖表的 CDF 線條風格 (橘/紅色系偏好，這裡用深橘黃虛線或與直方圖互補的對比色)
+            // 這裡採用亮橘黃色以識別這是「模擬」出來的 CDF
             if (simCDFData.length > 0) {
                 datasets.push({
                     label: `蒙地卡羅模擬CDF (${targetK}目標)`,
                     data: simCDFData,
-                    borderColor: 'rgba(245,158,11,1)',
+                    type: 'line',
+                    borderColor: 'rgba(245,158,11,1)', 
                     backgroundColor: 'transparent',
                     borderWidth: 2,
-                    borderDash: [6, 3],
+                    borderDash: [6, 3], // 虛線區分理論與模擬
                     fill: false,
-                    pointRadius: 0,
-                    tension: 0.1,
+                    pointRadius: chartLabels.length > 60 ? 0 : 1.5,
+                    order: 2,
                 });
             }
-
-            // 決定labels
-            let chartLabels;
-            if (theoryLabels.length > 0 && simLabels.length > 0) {
-                // 兩者都有時，使用理論labels作為基準（範圍較小的那個），sim數據自動對齊
-                chartLabels = theoryLabels;
-            } else if (theoryLabels.length > 0) {
-                chartLabels = theoryLabels;
-            } else {
-                chartLabels = simLabels;
-            }
-
+        
+            // --- 3. 渲染圖表 (整合前兩張圖的互動模式與 Y 軸外觀) ---
             comparisonChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -999,18 +996,33 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    // 統一使用原圖的滑鼠懸停互動模式 (對齊同一 X 軸垂直線提示)
+                    interaction: { mode: 'index', intersect: false },
                     scales: {
-                        y: { beginAtZero: true, max: 100, title: { display: true, text: '累積機率 (%)' } },
+                        x: {
+                            // 恢復為原先的類別軸，徹底擺脫稀疏與對不齊的問題
+                            title: { display: true, text: '抽數' }
+                        },
+                        y: { 
+                            beginAtZero: true, 
+                            max: 100, 
+                            title: { display: true, text: '累積機率 (%)' } 
+                        },
                     },
                     plugins: {
-                        legend: { position: 'top', labels: { boxWidth: 14, padding: 10, font: { size: 10 } } },
+                        legend: { 
+                            position: 'top', 
+                            labels: { boxWidth: 14, padding: 10, font: { size: 10 } } 
+                        },
                     },
                 },
             });
-
-            // 確保wrapper顯示（只要有任一數據就顯示）
+        
+            // 確保 wrapper 顯示
             const wrapper = document.getElementById('comparisonChartWrapper');
-            wrapper.style.display = (datasets.length > 0) ? 'block' : 'none';
+            if (wrapper) {
+                wrapper.style.display = (datasets.length > 0) ? 'block' : 'none';
+            }
         }
 
         // ============ 更新結果顯示 ============
